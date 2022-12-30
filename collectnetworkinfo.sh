@@ -1,113 +1,137 @@
 #!/bin/bash
+# grabsysinfo.sh - A simple menu driven shell script to to get information about your 
+# Linux server / desktop.
+# Author: Vivek Gite
+# Date: 12/Sep/2007
 
-IP4FW=/sbin/iptables
-IP6FW=/sbin/ip6tables
-LSPCI=/usr/bin/lspci
-ROUTE=/sbin/route
-NETSTAT=/bin/netstat
+# Define variables
 LSB=/usr/bin/lsb_release
 
-## files ##
-DNSCLIENT="/etc/resolv.conf"
-DRVCONF="/etc/modprobe.conf"
-NETALIASCFC="/etc/sysconfig/network-scripts/ifcfg-eth?-range?"
-NETCFC="/etc/sysconfig/network-scripts/ifcfg-eth?"
-NETSTATICROUTECFC="/etc/sysconfig/network-scripts/route-eth?"
-SYSCTL="/etc/sysctl.conf"
-
-## Output file ##
-OUTPUT="network.$(date +'%d-%m-%y').info.txt"
-
-## Email info to?? ##
-SUPPORT_ID="your_name@service_provider.com"
-
-chk_root() {
-	local meid=$(id -u)
-	if [ $meid -ne 0 ]; then
-		echo "You must be root user to run this tool"
-		exit 999
-	fi
+# Purpose: Display pause prompt
+# $1-> Message (optional)
+function pause(){
+	local message="$@"
+	[ -z $message ] && message="Press [Enter] key to continue..."
+	read -p "$message" readEnterKey
 }
 
-write_header() {
-	echo "---------------------------------------------------" >>$OUTPUT
-	echo "$@" >>$OUTPUT
-	echo "---------------------------------------------------" >>$OUTPUT
+# Purpose  - Display a menu on screen
+function show_menu(){
+    date
+    echo "---------------------------"
+    echo "   Main Menu"
+    echo "---------------------------"
+	echo "1. Operating system info"
+	echo "2. Hostname and dns info"
+	echo "3. Network info"
+	echo "4. Who is online"
+	echo "5. Last logged in users"
+	echo "6. Free and used memory info"
+	echo "7. exit"
 }
 
-dump_info() {
-	echo "* Hostname: $(hostname)" >$OUTPUT
-	echo "* Run date and time: $(date)" >>$OUTPUT
-
-	write_header "Linux Distro"
-	echo "Linux kernel: $(uname -mrs)" >>$OUTPUT
-	$LSB -a >>$OUTPUT
-
-	[ -x ${HWINF} ] && write_header "${HWINF}"
-	[ -x ${HWINF} ] && ${HWINF} >>$OUTPUT
-
-	[ -x ${HWINF} ] && write_header "${HWINF}"
-	[ -x ${HWINF} ] && ${HWINF} >>$OUTPUT
-
-	write_header "PCI Devices"
-	${LSPCI} -v >>$OUTPUT
-
-	write_header "$IFCFG Output"
-	$IFCFG >>$OUTPUT
-
-	write_header "Kernel Routing Table"
-	$ROUTE -n >>$OUTPUT
-
-	write_header "Network Card Drivers Configuration $DRVCONF"
-	[ -f $DRVCONF ] && grep eth $DRVCONF >>$OUTPUT || echo "Error $DRVCONF file not found." >>$OUTPUT
-
-	write_header "DNS Client $DNSCLIENT Configuration"
-	[ -f $DNSCLIENT ] && cat $DNSCLIENT >>$OUTPUT || echo "Error $DNSCLIENT file not found." >>$OUTPUT
-
-	write_header "Network Configuration File"
-	for f in $NETCFC; do
-		if [ -f $f ]; then
-			echo "** $f **" >>$OUTPUT
-			cat $f >>$OUTPUT
-		else
-			echo "Error $f not found." >>$OUTPUT
-		fi
-	done
-
-	write_header "Network Aliase File"
-	for f in $NETALIASCFC; do
-		if [ -f $f ]; then
-			echo "** $f **" >>$OUTPUT
-			cat $f >>$OUTPUT
-		else
-			echo "Error $f not found." >>$OUTPUT
-		fi
-	done
-
-	write_header "Network Static Routing Configuration"
-	for f in $NETSTATICROUTECFC; do
-		if [ -f $f ]; then
-			echo "** $f **" >>$OUTPUT
-			cat $f >>$OUTPUT
-		else
-			echo "Error $f not found." >>$OUTPUT
-		fi
-	done
-
-	write_header "IP4 Firewall Configuration"
-	$IP4FW -L -n >>$OUTPUT
-
-	write_header "IP6 Firewall Configuration"
-	$IP6FW -L -n >>$OUTPUT
-
-	write_header "Network Stats"
-	$NETSTAT -s >>$OUTPUT
-
-	write_header "Network Tweaks via $SYSCTL"
-	[ -f $SYSCTL ] && cat $SYSCTL >>$OUTPUT || echo "Error $SYSCTL not found." >>$OUTPUT
-
-	echo "The Network Configuration Info Written To $OUTPUT. Please email this file to $SUPPORT_ID."
+# Purpose - Display header message
+# $1 - message
+function write_header(){
+	local h="$@"
+	echo "---------------------------------------------------------------"
+	echo "     ${h}"
+	echo "---------------------------------------------------------------"
 }
 
-chk_root
-dump_info
+# Purpose - Get info about your operating system
+function os_info(){
+	write_header " System information "
+	echo "Operating system : $(uname)"
+	[ -x $LSB ] && $LSB -a || echo "$LSB command is not insalled (set \$LSB variable)"
+	#pause "Press [Enter] key to continue..."
+	pause
+}
+
+# Purpose - Get info about host such as dns, IP, and hostname
+function host_info(){
+	local dnsips=$(sed -e '/^$/d' /etc/resolv.conf | awk '{if (tolower($1)=="nameserver") print $2}')
+	write_header " Hostname and DNS information "
+	echo "Hostname : $(hostname -s)"
+	echo "DNS domain : $(hostname -d)"
+	echo "Fully qualified domain name : $(hostname -f)"
+	echo "Network address (IP) :  $(hostname -i)"
+	echo "DNS name servers (DNS IP) : ${dnsips}"
+	pause
+}
+
+# Purpose - Network inferface and routing info
+function net_info(){
+	devices=$(netstat -i | cut -d" " -f1 | egrep -v "^Kernel|Iface|lo")
+	write_header " Network information "
+	echo "Total network interfaces found : $(wc -w <<<${devices})"
+
+	echo "*** IP Addresses Information ***"
+	ip -4 address show
+
+	echo "***********************"
+	echo "*** Network routing ***"
+	echo "***********************"
+	netstat -nr
+
+	echo "**************************************"
+	echo "*** Interface traffic information ***"
+	echo "**************************************"
+	netstat -i
+
+	pause 
+}
+
+# Purpose - Display a list of users currently logged on 
+#           display a list of receltly loggged in users   
+function user_info(){
+	local cmd="$1"
+	case "$cmd" in 
+		who) write_header " Who is online "; who -H; pause ;;
+		last) write_header " List of last logged in users "; last ; pause ;;
+	esac 
+}
+
+# Purpose - Display used and free memory info
+function mem_info(){
+	write_header " Free and used memory "
+	free -m
+    
+    echo "*********************************"
+	echo "*** Virtual memory statistics ***"
+    echo "*********************************"
+	vmstat
+    echo "***********************************"
+	echo "*** Top 5 memory eating process ***"
+    echo "***********************************"	
+	ps auxf | sort -nr -k 4 | head -5	
+	pause
+}
+# Purpose - Get input via the keyboard and make a decision using case..esac 
+function read_input(){
+	local c
+	read -p "Enter your choice [ 1 - 7 ] " c
+	case $c in
+		1)	os_info ;;
+		2)	host_info ;;
+		3)	net_info ;;
+		4)	user_info "who" ;;
+		5)	user_info "last" ;;
+		6)	mem_info ;;
+		7)	echo "Bye!"; exit 0 ;;
+		*)	
+			echo "Please select between 1 to 7 choice only."
+			pause
+	esac
+}
+
+# ignore CTRL+C, CTRL+Z and quit singles using the trap
+trap '' SIGINT SIGQUIT SIGTSTP
+
+# main logic
+while true
+do
+	clear
+ 	show_menu	# display memu
+ 	read_input  # wait for user input
+done
