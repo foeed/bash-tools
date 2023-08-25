@@ -2,8 +2,7 @@
 #!/bin/bash
 # grabsysinfo.sh - A simple menu driven shell script to to get information about your 
 # Linux server / desktop.
-# Author: Vivek Gite
-# Date: 12/Sep/2007
+
 
 # Define variables
 LSB=/usr/bin/lsb_release
